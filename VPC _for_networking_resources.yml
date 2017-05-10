@@ -1,0 +1,304 @@
+AWSTemplateFormatVersion: "2010-09-09" 
+Description: VPC  for networking resources
+Parameters:
+  AvailabilityZone1: 
+    Description: Availability zone 1 name (e.g. us-east-1a) 
+    Type: AWS::EC2::AvailabilityZone::Name 
+  AvailabilityZone2: 
+    Description: Availability zone 2 name (e.g. us-east-1b) 
+    Type: AWS::EC2::AvailabilityZone::Name 
+# The first two Parameters correspond to the Availability Zones we discussed previously. We don't provide any default values for these parameters, to maintain region portability:
+# The remaining Parameters define the IP address ranges for the following:
+# The entire VPC
+# The public subnets (A and B)
+# The private subnets (A and B)
+# The default values we provide for the subnets will allocate 512 IP addresses to each subnet:
+# AWS reserves a small number of IP addresses in your IP space for AWS-specific services. The VPC DNS server is one such example of this. It's usually located at the second (*.2) IP address in # # the block allocated to your VPC.
+  VPCCIDR: 
+    Description: CIDR block for VPC 
+    Type: String 
+    Default: "172.31.0.0/21" # 2048 IP addresses 
+  PublicSubnetACIDR: 
+    Description: CIDR block for public subnet A 
+    Type: String 
+    Default: "172.31.0.0/23" # 512 IP address 
+  PublicSubnetBCIDR: 
+    Description: CIDR block for public subnet B 
+    Type: String 
+    Default: "172.31.2.0/23" # 512 IP address 
+  PrivateSubnetACIDR: 
+    Description: CIDR block for private subnet A 
+    Type: String 
+    Default: "172.31.4.0/23" # 512 IP address 
+  PrivateSubnetBCIDR: 
+    Description: CIDR block for private subnet B 
+    Type: String 
+    Default: "172.31.6.0/23" # 512 IP address
+# The shell of our VPC has now been created. At this point, it's not connected to the Internet, so it's not entirely useful to us. We need to add an Internet gateway and attach it to our VPC. Go # ahead and do that, as follows: 
+# Now we can start to define Resources. We'll start by defining the VPC itself, as well as the two public and two private subnets inside it:
+Resources: 
+  ExampleVPC: 
+    Type: AWS::EC2::VPC 
+    Properties: 
+      CidrBlock: !Ref VPCCIDR 
+      EnableDnsSupport: true 
+      EnableDnsHostnames: true 
+      Tags: 
+        - { Key: Name, Value: Example VPC } 
+  PublicSubnetA: 
+    Type: AWS::EC2::Subnet 
+    Properties: 
+      AvailabilityZone: !Ref AvailabilityZone1 
+      CidrBlock: !Ref PublicSubnetACIDR 
+      MapPublicIpOnLaunch: true 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+        - { Key: Name, Value: Public Subnet A } 
+  PublicSubnetB: 
+    Type: AWS::EC2::Subnet 
+    Properties: 
+      AvailabilityZone: !Ref AvailabilityZone2 
+      CidrBlock: !Ref PublicSubnetBCIDR 
+      MapPublicIpOnLaunch: true 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+        - { Key: Name, Value: Public Subnet B } 
+  PrivateSubnetA: 
+    Type: AWS::EC2::Subnet 
+    Properties: 
+      AvailabilityZone: !Ref AvailabilityZone1 
+      CidrBlock: !Ref PrivateSubnetACIDR 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+      - { Key: Name, Value: Private Subnet A } 
+  PrivateSubnetB: 
+    Type: AWS::EC2::Subnet 
+    Properties: 
+      AvailabilityZone: !Ref AvailabilityZone2 
+      CidrBlock: !Ref PrivateSubnetBCIDR 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+        - { Key: Name, Value: Private Subnet B }
+# Internet Gateway 
+  ExampleIGW: 
+    Type: AWS::EC2::InternetGateway 
+     Properties: 
+      Tags: 
+      - { Key: Name, Value: Example Internet Gateway } 
+  IGWAttachment: 
+    Type: AWS::EC2::VPCGatewayAttachment 
+    DependsOn: ExampleIGW 
+    Properties: 
+      VpcId: !Ref ExampleVPC 
+      InternetGatewayId: !Ref ExampleIGW
+# We need to create a couple of route tables. The first one we'll focus on is the public route table. We'll assign this route table to the two public subnets we've created. 
+# This route table will have just one route in it, which will direct all Internet-bound traffic to the Internet gateway we created in the previous step:
+# Public Route Table 
+# Add a route for Internet bound traffic pointing to our IGW 
+# A route for VPC bound traffic will automatically be added 
+  PublicRouteTable: 
+    Type: AWS::EC2::RouteTable 
+    Properties: 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+        - { Key: Name, Value: Public Route Table } 
+  PublicInternetRoute: 
+    Type: AWS::EC2::Route 
+    DependsOn: IGWAttachment 
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable 
+      GatewayId: !Ref ExampleIGW 
+      DestinationCidrBlock: "0.0.0.0/0" 
+  RouteAssociationPublicA: 
+    Type: AWS::EC2::SubnetRouteTableAssociation 
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable 
+      SubnetId: !Ref PublicSubnetA 
+  RouteAssociationPublicB: 
+    Type: AWS::EC2::SubnetRouteTableAssociation 
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable 
+      SubnetId: !Ref PublicSubnetB
+# We'll create the private route table in a similar fashion. Since the private subnet is isolated from the Internet, we won't add a route to the Internet gateway. Note that if you were to follow # the NAT gateway recipe in this book, it will require a route table as an input parameter—this is the route table you want to add NAT routes to:
+# Private Route Table 
+# We don't add any entries to this route table because there is no NAT gateway 
+# However a route for VPC bound traffic will automatically be added 
+  PrivateRouteTable: 
+    Type: AWS::EC2::RouteTable 
+    Properties: 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+        - { Key: Name, Value: Private Route Table } 
+  PrivateSubnetAssociationA: 
+    Type: AWS::EC2::SubnetRouteTableAssociation 
+    Properties: 
+      RouteTableId: !Ref PrivateRouteTable 
+      SubnetId: !Ref PrivateSubnetA 
+  PrivateSubnetAssociationB: 
+    Type: AWS::EC2::SubnetRouteTableAssociation 
+    Properties: 
+      RouteTableId: !Ref PrivateRouteTable 
+      SubnetId: !Ref PrivateSubnetB
+# We can now focus on the security aspects of our network. Let's focus on the public subnets. These are the subnets you'll add your load balancers to; you'll also add things such as bastion boxes # and NAT gateways. So we need to add a Network ACL (NACL) with several entries:
+# Allow outbound traffic to all ports. Outbound access is unrestricted from hosts in our public subnets.
+# Allow inbound traffic to ephemeral ports (above 1024). This ensures that packets returned to us from our outbound connections are not dropped.
+# Allow inbound access to low port numbers for SSH, HTTP, and HTTPS (22, 80, and 443):
+# Public NACL 
+  PublicNACL: 
+    Type: AWS::EC2::NetworkAcl 
+    Properties: 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+        - { Key: Name, Value: Example Public NACL } 
+# Allow outbound to everywhere 
+  NACLRulePublicEgressAllowAll: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: "0.0.0.0/0" 
+      Egress: true 
+      Protocol: 6 
+      PortRange: { From: 1, To: 65535 } 
+      RuleAction: allow 
+      RuleNumber: 100 
+      NetworkAclId: !Ref PublicNACL 
+# Allow outbound to VPC on all protocols 
+  NACLRulePublicEgressAllowAllToVPC: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: !Ref VPCCIDR 
+      Egress: true 
+      Protocol: -1 
+      RuleAction: allow 
+      RuleNumber: 200 
+      NetworkAclId: !Ref PublicNACL 
+# Allow inbound from everywhere to ephemeral ports (above 1024) 
+  NACLRulePublicIngressAllowEphemeral: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: "0.0.0.0/0" 
+      Protocol: 6 
+      PortRange: { From: 1024, To: 65535 } 
+      RuleAction: allow 
+      RuleNumber: 100 
+      NetworkAclId: !Ref PublicNACL 
+  # Allow inbound from everywhere on port 22 for SSH 
+  NACLRulePublicIngressAllowSSH: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: "0.0.0.0/0" 
+      Protocol: 6 
+      PortRange: { From: 22, To: 22 } 
+      RuleAction: allow 
+      RuleNumber: 200 
+      NetworkAclId: !Ref PublicNACL 
+  # Allow inbound from everywhere on port 443 for HTTPS 
+  NACLRulePublicIngressAllowHTTPS: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: "0.0.0.0/0" 
+      Protocol: 6 
+      PortRange: { From: 443, To: 443 } 
+      RuleAction: allow 
+      RuleNumber: 300 
+      NetworkAclId: !Ref PublicNACL 
+  # Allow inbound from everywhere on port 80 for HTTP 
+  NACLRulePublicIngressAllowHTTP: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: "0.0.0.0/0" 
+      Protocol: 6 
+      PortRange: { From: 80, To: 80 } 
+      RuleAction: allow 
+      RuleNumber: 400 
+      NetworkAclId: !Ref PublicNACL 
+  # Allow inbound from VPC on all protocols 
+  NACLRulePublicIngressAllowFromVPC: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: !Ref VPCCIDR 
+      Protocol: -1 
+      RuleAction: allow 
+      RuleNumber: 500 
+      NetworkAclId: !Ref PublicNACL 
+  NACLAssociationPublicSubnetA: 
+    Type: AWS::EC2::SubnetNetworkAclAssociation 
+    Properties: 
+      NetworkAclId: !Ref PublicNACL 
+      SubnetId: !Ref PublicSubnetA 
+  NACLAssociationPublicSubnetB: 
+    Type: AWS::EC2::SubnetNetworkAclAssociation 
+    Properties: 
+      NetworkAclId: !Ref PublicNACL 
+      SubnetId: !Ref PublicSubnetB
+# We need to do the same for our private subnets. These subnets are somewhat easier to deal with. They should only be allowed to talk to hosts within our VPC, so we just need to add some NACLs 
+# allowing inbound and outbound traffic to our VPCs IP range:
+# Private NACL 
+  PrivateNACL: 
+    Type: AWS::EC2::NetworkAcl 
+    Properties: 
+      VpcId: !Ref ExampleVPC 
+      Tags: 
+        - { Key: Name, Value: Example Private NACL } 
+  # Allow all protocols from VPC range 
+  NACLRulePrivateIngressAllowVPC: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: !Ref VPCCIDR 
+      Protocol: -1 
+      RuleAction: allow 
+      RuleNumber: 100 
+      NetworkAclId: !Ref PrivateNACL 
+  # Allow TCP responses from everywhere 
+  NACLRulePrivateIngressAllowEphemeral: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: "0.0.0.0/0" 
+      Protocol: 6 
+      PortRange: { From: 1024, To: 65535 } 
+      RuleAction: allow 
+      RuleNumber: 200 
+      NetworkAclId: !Ref PrivateNACL 
+  # Allow outbound traffic to everywhere, all protocols 
+  NACLRulePrivateEgressAllowVPC: 
+    Type: AWS::EC2::NetworkAclEntry 
+    Properties: 
+      CidrBlock: "0.0.0.0/0" 
+      Egress: true 
+      Protocol: -1 
+      RuleAction: allow 
+      RuleNumber: 100 
+      NetworkAclId: !Ref PrivateNACL 
+  NACLAssociationPrivateSubnetA: 
+    Type: AWS::EC2::SubnetNetworkAclAssociation 
+    Properties: 
+      NetworkAclId: !Ref PrivateNACL 
+      SubnetId: !Ref PrivateSubnetA 
+  NACLAssociationPrivateSubnetB: 
+    Type: AWS::EC2::SubnetNetworkAclAssociation 
+    Properties: 
+      NetworkAclId: !Ref PrivateNACL 
+      SubnetId: !Ref PrivateSubnetB
+# Outputs
+Outputs: 
+  ExampleVPC: 
+    Value: !Ref ExampleVPC 
+  PublicSubnetA: 
+    Value: !Ref PublicSubnetA 
+  PublicSubnetB: 
+    Value: !Ref PublicSubnetB 
+  PrivateRouteTable: 
+    Value: !Ref PrivateRouteTable 
+  PublicRouteTable: 
+    Value: !Ref PublicRouteTable 
+  PrivateSubnetA: 
+    Value: !Ref PrivateSubnetA 
+  PrivateSubnetB: 
+    Value: !Ref PrivateSubnetB
+
+# You can go ahead and create your VPC in the web console or via the CLI using the following command:
+# aws cloudformation create-stack \
+#        --stack-name secure-vpc \
+#        --template-body file://07-building-a-secure-network.yaml \
+#        --parameters \
+#        ParameterKey=AvailabilityZone1,ParameterValue=<az-1> \
+#        ParameterKey=AvailabilityZone2,ParameterValue=<az-2>

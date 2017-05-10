@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: "2010-09-09"  
+Description: Weighted DNS setup for canary deployments.
+Parameters: 
+  HostedZoneName: 
+    Type: String 
+    Description: The hosted zone to create records in 
+  DomainName: 
+    Type: String 
+    Description: The domain name to create in the hosted zone    
+  OldResource: 
+    Type: String 
+    Description: The older resource domain name 
+  NewResource: 
+    Type: String 
+    Description: The newer resource domain name 
+  OldWeight: 
+    Type: Number 
+    Default: 1 
+    Description: The ratio of requests to send to the older endpoint    
+  NewWeight: 
+    Type: Number 
+    Default: 0 
+    Description: The ratio of requests to send to the newer endpoint
+Resources: 
+  RecordSetGroup: 
+    Type: AWS::Route53::RecordSetGroup 
+    Properties: 
+      HostedZoneName: !Ref HostedZoneName 
+      Comment: Canary deployment record set group 
+      RecordSets: 
+        - Name: !Join [ ".", [ Ref: DomainName, Ref: HostedZoneName ] ] 
+          Type: CNAME 
+          TTL: "300" 
+          SetIdentifier: Old 
+          Weight: !Ref OldWeight 
+          ResourceRecords: 
+            - !Ref OldResource 
+        - Name: !Join [ ".", [ Ref: DomainName, Ref: HostedZoneName ] ] 
+          Type: CNAME 
+          TTL: "300" 
+          SetIdentifier: New 
+          Weight: !Ref NewWeight 
+          ResourceRecords: 
+            - !Ref NewResource
+
+##########################################################################
+#          aws cloudformation create-stack \
+#            --stack-name canary \
+#            --template-body file://07-canary-deployments.yaml \
+#            --parameters \
+#            ParameterKey=DomainName,ParameterValue=<your-domain-name> \
+#            ParameterKey=OldResource,ParameterValue=<old-resource-dns> \
+#            ParameterKey=NewResource,ParameterValue=<new-resource-dns> \
+#            ParameterKey=HostedZoneName,ParameterValue=<your-hosted-zone> 
+#
+#          aws cloudformation update-stack \
+#            --stack-name canary \
+#            --parameters \
+#            ParameterKey=HostedZoneName,UsePreviousValue=true \
+#            ParameterKey=DomainName,UsePreviousValue=true \
+#            ParameterKey=OldResource,UsePreviousValue=true \
+#            ParameterKey=NewResource,UsePreviousValue=true \
+#            ParameterKey=OldWeight,ParameterValue=0 \
+#            ParameterKey=NewWeight,ParameterValue=1 \
+#            --use-previous-template
